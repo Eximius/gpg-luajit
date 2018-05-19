@@ -553,8 +553,9 @@ TValue *lj_tab_set(lua_State *L, GCtab *t, cTValue *key)
 /* -- Table traversal ----------------------------------------------------- */
 
 /* Get the traversal index of a key. */
-static uint32_t keyindex(lua_State *L, GCtab *t, cTValue *key)
+uint32_t keyindex(lua_State *L, GCtab *t, cTValue *key)
 {
+  lua_Number nk = -500;
   TValue tmp;
   if (tvisint(key)) {
     int32_t k = intV(key);
@@ -563,10 +564,11 @@ static uint32_t keyindex(lua_State *L, GCtab *t, cTValue *key)
     setnumV(&tmp, (lua_Number)k);
     key = &tmp;
   } else if (tvisnum(key)) {
-    lua_Number nk = numV(key);
+    nk = numV(key);
     int32_t k = lj_num2int(nk);
-    if ((uint32_t)k < t->asize && nk == (lua_Number)k)
+    if ((uint32_t)k < t->asize && nk == (lua_Number)k) {
       return (uint32_t)k;  /* Array key indexes: [0..t->asize-1] */
+    }
   }
   if (!tvisnil(key)) {
     Node *n = hashkey(t, key);
@@ -577,6 +579,9 @@ static uint32_t keyindex(lua_State *L, GCtab *t, cTValue *key)
     } while ((n = nextnode(n)));
     if (key->u32.hi == 0xfffe7fff)  /* ITERN was despecialized while running. */
       return key->u32.lo - 1;
+    printf("key: %08x %08x\n", key->u32.hi, key->u32.lo);
+    printf("isnum: %d %f %d %f %d\n", tvisnum(key), numV(key), lj_num2int(numV(key)), nk, (int32_t)nk);
+    printf("x/%dx %p\n", 3*(t->hmask+1), noderef(t->node));
     lj_err_msg(L, LJ_ERR_NEXTIDX);
     return 0;  /* unreachable */
   }

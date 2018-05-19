@@ -2550,6 +2550,17 @@ static int predict_next(LexState *ls, FuncState *fs, BCPos pc)
 	 (name->len == 4 && !strcmp(strdata(name), "next"));
 }
 
+static void _const_str_lit(ExpDesc* e, lua_State* L, const char* str){
+    // FIXME: maybe use lj_tab_getstr(fs->kt, lj_str_newlit(ls->L, "type"));
+  expr_init(e, VKSTR, 0);
+  e->u.sval = lj_str_new(L, str, strlen(str)-1);
+}
+
+#define const_str_lit(e_name, L, X) \
+  ExpDesc (e_name); \
+  expr_init(&(e_name), VKSTR, 0); \
+  (e_name).u.sval = lj_str_newlit(L, X);
+
 /* Parse 'for' iterator. */
 static void parse_for_iter(LexState *ls, GCstr *indexname)
 {
@@ -2558,7 +2569,7 @@ static void parse_for_iter(LexState *ls, GCstr *indexname)
   BCReg nvars = 0;
   BCLine line;
   BCReg base = fs->freereg + 3;
-  BCPos loop, loopend, exprpc = fs->pc;
+  BCPos loop, loopend, exprpc = fs->pc, skip_table_iter = 0;
   FuncScope bl;
   int isnext;
   /* Hidden control variables. */
@@ -2576,19 +2587,78 @@ static void parse_for_iter(LexState *ls, GCstr *indexname)
   isnext = (nvars <= 5 && predict_next(ls, fs, exprpc));
   var_add(ls, 3);  /* Hidden control variables. */
   lex_check(ls, TK_do);
+
+  if(!isnext) {
+    BCReg test_base = fs->freereg;
+    int n_ret = 1;
+    int n_arg = 1;
+    
+    const_str_lit(e_ty, ls->L, "type");
+    const_str_lit(e_tab, ls->L, "table");
+    const_str_lit(e_n, ls->L, "hack_next");
+
+    e_ty.k = VGLOBAL;
+    e_n.k = VGLOBAL;
+
+    //bcemit_AD(fs, BC_GGET, 0, const_str(fs, &e_ty));
+    //bcreg_bump(fs, 3);
+    //var_add(ls, 3);
+
+    printf("Doing the thing in the thing! Index : %s\n", strdata(indexname));
+
+    //bcemit_AD(fs, BC_KSTR, 1, const_str(fs, &e_ty));
+
+    expr_toreg(fs, &e_ty, test_base);
+    bcemit_AD(fs, BC_MOV, test_base+1, base-3);
+
+    bcemit_ABC(fs, BC_CALL, test_base, n_ret+1, n_arg+1);
+    
+    bcemit_AD(fs, BC_KSTR, test_base+1, const_str(fs, &e_tab));
+
+    bcemit_AD(fs, BC_ISNEV, test_base, test_base+1);
+
+    skip_table_iter = bcemit_AJ(fs, BC_JMP, base, NO_JMP);
+
+    bcemit_AD(fs, BC_MOV, base-2, base-3);
+
+    expr_toreg(fs, &e_n, base-3);
+
+    bcemit_nil(fs, base-1, 1);
+
+
+    //loop = fs->pc - 1;
+
+    // bcemit_AD(fs, BC_MOV, test_base+1, base-3);
+
+    // bcemit_ABC(fs, BC_CALL, test_base, 3+1, 1+1);
+
+    // bcemit_AD(fs, BC_MOV, base-3, test_base);
+    // bcemit_AD(fs, BC_MOV, base-2, test_base+1);
+    // loop = bcemit_AD(fs, BC_MOV, base-1, test_base+2);
+    // Fallthrough to block
+  }
+  // } else {
+  //   loop = bcemit_AJ(fs, isnext ? BC_ISNEXT : BC_JMP, base, NO_JMP);
+  // }
   loop = bcemit_AJ(fs, isnext ? BC_ISNEXT : BC_JMP, base, NO_JMP);
+
   fscope_begin(fs, &bl, 0);  /* Scope for visible variables. */
   var_add(ls, nvars-3);
   bcreg_reserve(fs, nvars-3);
   parse_block(ls);
   fscope_end(fs);
   /* Perform loop inversion. Loop control instructions are at the end. */
-  jmp_patchins(fs, loop, fs->pc);
+  if(skip_table_iter)
+    jmp_patchins(fs, skip_table_iter, fs->pc);
+  //else
+    jmp_patchins(fs, loop, fs->pc);
+
   bcemit_ABC(fs, isnext ? BC_ITERN : BC_ITERC, base, nvars-3+1, 2+1);
   loopend = bcemit_AJ(fs, BC_ITERL, base, NO_JMP);
   fs->bcbase[loopend-1].line = line;  /* Fix line for control ins. */
   fs->bcbase[loopend].line = line;
   jmp_patchins(fs, loopend, loop+1);
+
 }
 
 /* Parse 'for' statement. */

@@ -288,11 +288,13 @@ static int llex(LexState *ls, TValue *tv)
     case '\f':
       next(ls);
       continue;
+    case '#':
+      goto _comment;
     case '-':
       next(ls);
       if (ls->current != '-') return '-';
       /* else is a comment */
-    case '#':
+    _comment:
       next(ls);
       if (ls->current == '[') {
 	int sep = skip_sep(ls);

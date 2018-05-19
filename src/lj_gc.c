@@ -83,6 +83,8 @@ static void gc_mark_gcroot(global_State *g)
       gc_markobj(g, gcref(g->gcroot[i]));
 }
 
+extern void MOHO_GLUE_gc_mark(global_State* g) __attribute__ ((weak));
+
 /* Start a GC cycle and mark the root set. */
 static void gc_mark_start(global_State *g)
 {
@@ -93,6 +95,8 @@ static void gc_mark_start(global_State *g)
   gc_markobj(g, tabref(mainthread(g)->env));
   gc_marktv(g, &g->registrytv);
   gc_mark_gcroot(g);
+  if(MOHO_GLUE_gc_mark)
+    MOHO_GLUE_gc_mark(g);
   g->gc.state = GCSpropagate;
 }
 
